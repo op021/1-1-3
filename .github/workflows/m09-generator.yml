@@ -1,0 +1,141 @@
+name: YAML M09精靈
+
+on:
+  workflow_dispatch:
+
+jobs:
+  GSAC任務處理:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 拉取程式碼
+        uses: actions/checkout@v4
+
+      - name: 安裝GitHub CLI
+        run: |
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update && sudo apt install gh jq -y
+
+      - name: 設定GitHub CLI驗證
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
+
+      - name: 確認檔案目錄結構
+        run: |
+          ls -la
+          find . -name "*.md" -type f | head -10
+          echo "尋找任務清單檔案..."
+
+      - name: 建立測試任務清單（如果不存在）
+        run: |
+          mkdir -p GSAC賞金任務
+          cat > GSAC賞金任務/823-任務清單.md << EOF
+          https://github.com/projectdiscovery/nuclei-templates/issues/12947
+          https://github.com/projectdiscovery/nuclei-templates/issues/12946
+          https://github.com/activepieces/activepieces/issues/8858
+          https://github.com/activepieces/activepieces/issues/8854
+          https://github.com/projectdiscovery/nuclei-templates/issues/12707
+          https://github.com/activepieces/activepieces/issues/8589
+          https://github.com/activepieces/activepieces/issues/8284
+          https://github.com/activepieces/activepieces/issues/8236
+          https://github.com/activepieces/activepieces/issues/8135
+          EOF
+
+      - name: 驗證檔案內容
+        run: |
+          echo "檔案內容預覽："
+          cat GSAC賞金任務/823-任務清單.md
+          echo "網址數量："
+          grep -c "https://github.com" GSAC賞金任務/823-任務清單.md || echo "0"
+
+      - name: 批次抓取GitHub Issues並生成M09.json
+        run: |
+          echo "開始生成M09.json..."
+          echo "[" > M09.json
+          
+          # 計算總數量
+          total=$(grep -c "https://github.com" GSAC賞金任務/823-任務清單.md || echo "0")
+          echo "總共需要抓取 $total 個Issue"
+          
+          counter=0
+          
+          # 讀取每一行URL
+          while IFS= read -r url; do
+            # 跳過空行和不是GitHub URL的行
+            if [[ -z "$url" || "$url" != *"github.com"* ]]; then
+              continue
+            fi
+            
+            # 提取owner/repo和issue number
+            repo_path=$(echo "$url" | sed 's|https://github.com/||' | sed 's|/issues/.*||')
+            issue_num=$(echo "$url" | grep -oE '[0-9]+$')
+            
+            if [[ -n "$repo_path" && -n "$issue_num" ]]; then
+              echo "🔍 正在抓取: $repo_path#$issue_num"
+              
+              # 如果不是第一個，加逗號
+              if [ $counter -gt 0 ]; then
+                echo "," >> M09.json
+              fi
+              
+              # 嘗試抓取Issue資料
+              if gh issue view "$repo_path#$issue_num" --json number,title,body,comments,labels,assignees,createdAt,updatedAt,htmlUrl >> M09.json 2>/dev/null; then
+                echo "✅ 成功抓取: $repo_path#$issue_num"
+              else
+                echo "❌ 抓取失敗: $repo_path#$issue_num"
+                # 移除逗號如果添加失敗
+                if [ $counter -gt 0 ]; then
+                  sed -i '$d' M09.json
+                fi
+                continue
+              fi
+              
+              counter=$((counter + 1))
+            fi
+          done < GSAC賞金任務/823-任務清單.md
+          
+          echo "]" >> M09.json
+          echo "✅ M09.json 生成完畢！總共處理了 $counter 個Issues"
+
+      - name: 驗證生成的JSON檔案
+        run: |
+          echo "檢查M09.json檔案..."
+          if [ -f M09.json ]; then
+            echo "檔案大小: $(stat -f%z M09.json 2>/dev/null || stat -c%s M09.json) bytes"
+            echo "檔案內容預覽（前50行）："
+            head -50 M09.json
+            echo "..."
+            echo "檔案內容預覽（後10行）："
+            tail -10 M09.json
+            
+            # 檢查JSON格式
+            if jq empty M09.json 2>/dev/null; then
+              echo "✅ JSON格式驗證通過"
+            else
+              echo "❌ JSON格式錯誤"
+              exit 1
+            fi
+          else
+            echo "❌ M09.json檔案不存在"
+            exit 1
+          fi
+
+      - name: 建立時間戳檔案
+        run: |
+          date "+%Y-%m-%d %H:%M:%S UTC" > M09_timestamp.txt
+          echo "SHA256: $(sha256sum M09.json | cut -d' ' -f1)" >> M09_timestamp.txt
+
+      - name: 上傳成果
+        uses: actions/upload-artifact@v4
+        with:
+          name: 823-M09情報檔案-$(date +%Y%m%d-%H%M%S)
+          path: |
+            M09.json
+            M09_timestamp.txt
+            GSAC賞金任務/823-任務清單.md
+
+      - name: 顯示完成摘要
+        run: |
+          echo "🎉 M09情報檔案生成完成！"
+          echo "📁 檔案已上傳至Artifacts，可在Actions頁面下載"
+          echo "🔐 檔案簽章已記錄在M09_timestamp.txt中"
