@@ -1,12 +1,7 @@
-name: YAML-00精靈
+name: YAML M09精靈
 
 on:
   workflow_dispatch:
-    inputs:
-      task_file:
-        description: '任務清單檔案名稱（例如：823 任務清單.md）'
-        required: true
-        default: '823 任務清單.md'
 
 jobs:
   fetch_issues_and_create_m09:
@@ -14,61 +9,35 @@ jobs:
 
     steps:
       - name: 檢查並拉取程式碼
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
       - name: 安裝工具
-        run: sudo apt-get update && sudo apt-get install -y gh jq
-
-      - name: 抓取並生成 M09.json 檔案
         run: |
-          echo "🚀 PD精靈啟動中... 正在處理任務清單 ${{ github.event.inputs.task_file }}"
+          echo "🔧 安裝 jq 與 curl"
+          sudo apt-get update
+          sudo apt-get install -y jq curl
 
-          urls=$(grep -Eo 'https://github\\.com/[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+/issues/[0-9]+' "GSAC賞金任務/${{ github.event.inputs.task_file }}")
+      - name: 啟動 YAML M09精靈
+        run: echo "🚀 YAML M09精靈啟動中...正在處理任務清單 823 任務清單.md"
 
-          if [ -z "$urls" ]; then
-            echo "❌ 錯誤：在輸入文件中找不到任何網址。請檢查檔案內容。"
+      - name: 抓取 GitHub Issue 情報
+        run: |
+          echo "📥 YAML M09精靈正在抓取 GitHub Issue 情報..."
+          curl -s https://api.github.com/repos/op021/Quantum-Cola-s-Digital-Life/issues \
+            | jq '[.[] | {標題: .title, 編號: .number, 狀態: .state, 標籤: [.labels[].name]}]' \
+            > M09.json
+
+      - name: 驗證 M09.json 是否成功生成
+        run: |
+          if [ -s M09.json ]; then
+            echo "✅ YAML M09精靈任務完成，M09.json 已成功生成"
+          else
+            echo "❌ YAML M09精靈失敗：未成功生成 M09.json"
             exit 1
           fi
 
-          echo "[" > M09.json
-          first_url=true
-          for url in $urls; do
-            if [ "$first_url" = false ]; then
-              echo "," >> M09.json
-            fi
-
-            owner_repo=$(echo "$url" | awk -F'/issues' '{print $1}' | cut -d'/' -f4,5)
-            issue_number=$(echo "$url" | awk -F'/' '{print $NF}')
-
-            echo "➡️ 正在抓取 ${owner_repo}#${issue_number} 的資料..."
-
-            gh issue view "${owner_repo}#${issue_number}" \
-              --json number,title,body,comments,createdAt,updatedAt \
-              | jq --arg repo "$owner_repo" '{
-                issue_number: .number,
-                title: .title,
-                body: .body,
-                comments: .comments,
-                related_issues: (
-                  (.body + " " + ([.comments[].body] | join(" "))) 
-                  | scan("(?<=issues/)[0-9]+") | unique | map(tonumber)
-                ),
-                project_name: ($repo | split("/")[1]),
-                team: ($repo | split("/")[0]),
-                created_at: .createdAt,
-                updated_at: .updatedAt
-              }' >> M09.json
-
-            first_url=false
-          done
-          echo "]" >> M09.json
-          echo "✅ 任務完成！M09.json 已成功生成！"
-
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: 上傳情報檔案至 GitHub
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: M09-情報檔案
           path: M09.json
