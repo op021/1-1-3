@@ -18,7 +18,7 @@ jobs:
 
       - name: 檢查檔案是否存在
         run: |
-          if [ ! -f "GSAC賞金任務/823-任務清單.md" ]; then
+          if [ ! -f "GSAC賞金任務/823 任務清單.md" ]; then
             echo "❌ 錯誤：找不到 GSAC賞金任務/823-任務清單.md"
             exit 1
           fi
