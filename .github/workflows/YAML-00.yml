@@ -1,60 +1,72 @@
-name: YAML M09精靈
+name: M09 Data Generator
 
 on:
   workflow_dispatch:
 
 jobs:
-  GSAC_job:
+  gsac-task-processing:
     runs-on: ubuntu-latest
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - name: 拉取程式碼
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: 安裝 GitHub CLI 與 jq
+      - name: Install dependencies
         run: |
+          sudo apt update
+          sudo apt install -y curl gpg jq
           curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
             | sudo gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
             | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          sudo apt update && sudo apt install gh jq -y
+          sudo apt update
+          sudo apt install -y gh
 
-      - name: 設定 GitHub CLI 驗證
+      - name: Authenticate GitHub CLI
         run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
 
-      - name: 確認任務清單檔案
-        run: |
-          ls GSAC賞金任務/823-任務清單.md
+      - name: Verify input file exists
+        run: ls bonus-tasks/823-task-list.md
 
-      - name: 批次抓取並生成 M09.json
+      - name: Fetch issues and generate JSON
         run: |
-          echo "[" > 823-M09-情報檔案.json
-          total=$(grep -cE '^https://github\.com/' GSAC賞金任務/823-任務清單.md || echo 0)
-          echo "共需處理 $total 個 Issue"
-          counter=0
-          while read url; do
-            [ -z "$url" ] && continue
-            repo=$(echo "$url" | sed 's|https://github.com/||;s|/issues.*||')
-            num=$(echo "$url" | awk -F'/' '{print $NF}')
-            [ $counter -gt 0 ] && echo "," >> 823-M09-情報檔案.json
-            echo "🔍 抓取 $repo#$num"
-            gh issue view "$repo#$num" \
+          echo "[" > 823-M09-data.json
+          count=0
+          total=$(grep -c '^https://github.com/' bonus-tasks/823-task-list.md || echo 0)
+          echo "Processing $total URLs"
+
+          while read -r url; do
+            [[ -z "$url" ]] && continue
+            repo=${url#https://github.com/}
+            repo=${repo%/issues*}
+            issue=${url##*/}
+            if (( count > 0 )); then
+              echo "," >> 823-M09-data.json
+            fi
+            echo "Fetching $repo#$issue"
+            gh issue view "$repo#$issue" \
               --json number,title,body,comments,labels,assignees,createdAt,updatedAt,htmlUrl \
-              >> 823-M09-情報檔案.json
-            counter=$((counter+1))
-          done < GSAC賞金任務/823-任務清單.md
-          echo "]" >> 823-M09-情報檔案.json
-          echo "✅ 已生成 823-M09-情報檔案.json，共 $counter 條"
+              >> 823-M09-data.json
+            ((count++))
+          done < bonus-tasks/823-task-list.md
 
-      - name: 驗證 JSON 格式
+          echo "]" >> 823-M09-data.json
+          echo "✅ Generated 823-M09-data.json with $count entries"
+
+      - name: Validate JSON format
         run: |
-          jq empty 823-M09-情報檔案.json || (echo "JSON 格式錯誤" && exit 1)
+          if jq empty 823-M09-data.json; then
+            echo "JSON is valid"
+          else
+            echo "Invalid JSON"
+            exit 1
+          fi
 
-      - name: 上傳成果
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: 823-M09-情報檔案
-          path: 823-M09-情報檔案.json
+          name: 823-M09-data
+          path: 823-M09-data.json
 
