@@ -1,4 +1,4 @@
-name: YAML M09精靈修正版
+name: YAML M09精靈
 
 on:
   workflow_dispatch:
@@ -13,35 +13,48 @@ jobs:
       - name: 拉取程式碼
         uses: actions/checkout@v4
 
-      - name: 安裝工具
-        run: sudo apt-get update && sudo apt-get install -y gh jq
-
-      - name: 檢查檔案是否存在
+      - name: 安裝 GitHub CLI 與 jq
         run: |
-          if [ ! -f "GSAC賞金任務/823 任務清單.md" ]; then
-            echo "❌ 錯誤：找不到 GSAC賞金任務/823-任務清單.md"
-            exit 1
-          fi
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+            | sudo gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+            | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update && sudo apt install gh jq -y
 
-      - name: 抓取並生成 JSON
+      - name: 設定 GitHub CLI 驗證
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
+
+      - name: 確認任務清單檔案
         run: |
-          echo "[" > M09.json
-          first=true
-          grep -Eo 'https://github\.com/[^ ]+' "GSAC賞金任務/823-任務清單.md" | while read url; do
-            repo=$(echo "$url" | cut -d'/' -f4,5)
-            issue=$(echo "$url" | awk -F'/' '{print $NF}')
-            if [ "$first" = false ]; then echo "," >> M09.json; fi
-            echo "🔍 抓取中：$repo#$issue"
-            gh issue view "$repo#$issue" \
+          ls GSAC賞金任務/823-任務清單.md
+
+      - name: 批次抓取並生成 M09.json
+        run: |
+          echo "[" > 823-M09-情報檔案.json
+          total=$(grep -cE '^https://github\.com/' GSAC賞金任務/823-任務清單.md || echo 0)
+          echo "共需處理 $total 個 Issue"
+          counter=0
+          while read url; do
+            [ -z "$url" ] && continue
+            repo=$(echo "$url" | sed 's|https://github.com/||;s|/issues.*||')
+            num=$(echo "$url" | awk -F'/' '{print $NF}')
+            [ $counter -gt 0 ] && echo "," >> 823-M09-情報檔案.json
+            echo "🔍 抓取 $repo#$num"
+            gh issue view "$repo#$num" \
               --json number,title,body,comments,labels,assignees,createdAt,updatedAt,htmlUrl \
-              >> M09.json
-            first=false
-          done
-          echo "]" >> M09.json
-          echo "✅ M09.json 已成功生成！"
+              >> 823-M09-情報檔案.json
+            counter=$((counter+1))
+          done < GSAC賞金任務/823-任務清單.md
+          echo "]" >> 823-M09-情報檔案.json
+          echo "✅ 已生成 823-M09-情報檔案.json，共 $counter 條"
+
+      - name: 驗證 JSON 格式
+        run: |
+          jq empty 823-M09-情報檔案.json || (echo "JSON 格式錯誤" && exit 1)
 
       - name: 上傳成果
         uses: actions/upload-artifact@v4
         with:
-          name: 823-M09情報檔案
-          path: M09.json
+          name: 823-M09-情報檔案
+          path: 823-M09-情報檔案.json
+
