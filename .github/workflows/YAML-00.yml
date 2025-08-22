@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,9 +23,6 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
           sudo apt update
           sudo apt install -y gh
-
-      - name: Authenticate GitHub CLI
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
 
       - name: Verify input file exists
         run: ls bonus-tasks/823-task-list.md
