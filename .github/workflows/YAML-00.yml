@@ -4,40 +4,38 @@ on:
   workflow_dispatch:
 
 jobs:
-  fetch_issues_and_create_m09:
+  GSAC任務處理:
     runs-on: ubuntu-latest
-
     steps:
-      - name: 檢查並拉取程式碼
-        uses: actions/checkout@v3
+      - name: 拉取程式碼
+        uses: actions/checkout@v4
 
       - name: 安裝工具
+        run: sudo apt-get update && sudo apt-get install -y gh jq
+
+      - name: 讀取並轉換任務清單
         run: |
-          echo "🔧 安裝 jq 與 curl"
-          sudo apt-get update
-          sudo apt-get install -y jq curl
+          echo "🚀 開始處理 GSAC賞金任務/823-任務清單.md"
+          urls=$(grep -Eo 'https://github\\.com/[^ ]+' "GSAC賞金任務/823-任務清單.md")
+          echo "[" > M09.json
+          first=true
+          for url in $urls; do
+            if [ "$first" = false ]; then echo "," >> M09.json; fi
+            repo=$(echo "$url" | cut -d'/' -f4,5)
+            issue=$(echo "$url" | awk -F'/' '{print $NF}')
+            gh issue view "$repo#$issue" \
+              --json number,title,body,createdAt,updatedAt,htmlUrl \
+              >> M09.json
+            first=false
+          done
+          echo "]" >> M09.json
+          echo "✅ M09.json 已成功生成！"
 
-      - name: 啟動 YAML M09精靈
-        run: echo "🚀 YAML M09精靈啟動中...正在處理任務清單 823 任務清單.md"
-
-      - name: 抓取 GitHub Issue 情報
-        run: |
-          echo "📥 YAML M09精靈正在抓取 GitHub Issue 情報..."
-          curl -s https://api.github.com/repos/op021/Quantum-Cola-s-Digital-Life/issues \
-            | jq '[.[] | {標題: .title, 編號: .number, 狀態: .state, 標籤: [.labels[].name]}]' \
-            > M09.json
-
-      - name: 驗證 M09.json 是否成功生成
-        run: |
-          if [ -s M09.json ]; then
-            echo "✅ YAML M09精靈任務完成，M09.json 已成功生成"
-          else
-            echo "❌ YAML M09精靈失敗：未成功生成 M09.json"
-            exit 1
-          fi
-
-      - name: 上傳情報檔案至 GitHub
-        uses: actions/upload-artifact@v3
+      - name: 上傳成果
+        uses: actions/upload-artifact@v4
         with:
-          name: M09-情報檔案
+          name: M09情報檔案
           path: M09.json
+
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
