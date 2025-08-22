@@ -13,10 +13,20 @@ jobs:
       - name: 安裝工具
         run: sudo apt-get update && sudo apt-get install -y gh jq
 
-      - name: 讀取並轉換任務清單
+      - name: 檢查檔案是否存在
         run: |
-          echo "🚀 開始處理 GSAC賞金任務/823-任務清單.md"
+          if [ ! -f "GSAC賞金任務/823-任務清單.md" ]; then
+            echo "❌ 錯誤：找不到 GSAC賞金任務/823-任務清單.md"
+            exit 1
+          fi
+
+      - name: 抓取並生成 JSON
+        run: |
           urls=$(grep -Eo 'https://github\\.com/[^ ]+' "GSAC賞金任務/823-任務清單.md")
+          if [ -z "$urls" ]; then
+            echo "❌ 錯誤：任務清單中沒有找到任何 GitHub Issue URL"
+            exit 1
+          fi
           echo "[" > M09.json
           first=true
           for url in $urls; do
@@ -24,7 +34,7 @@ jobs:
             repo=$(echo "$url" | cut -d'/' -f4,5)
             issue=$(echo "$url" | awk -F'/' '{print $NF}')
             gh issue view "$repo#$issue" \
-              --json number,title,body,createdAt,updatedAt,htmlUrl \
+              --json number,title,body,comments,labels,assignees,createdAt,updatedAt,htmlUrl \
               >> M09.json
             first=false
           done
@@ -34,7 +44,7 @@ jobs:
       - name: 上傳成果
         uses: actions/upload-artifact@v4
         with:
-          name: M09情報檔案
+          name: 823-M09情報檔案
           path: M09.json
 
     env:
