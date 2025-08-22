@@ -1,4 +1,4 @@
-name: YAML M09精靈
+name: YAML M09精靈修正版
 
 on:
   workflow_dispatch:
@@ -6,6 +6,9 @@ on:
 jobs:
   GSAC任務處理:
     runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     steps:
       - name: 拉取程式碼
         uses: actions/checkout@v4
@@ -22,17 +25,13 @@ jobs:
 
       - name: 抓取並生成 JSON
         run: |
-          urls=$(grep -Eo 'https://github\\.com/[^ ]+' "GSAC賞金任務/823-任務清單.md")
-          if [ -z "$urls" ]; then
-            echo "❌ 錯誤：任務清單中沒有找到任何 GitHub Issue URL"
-            exit 1
-          fi
           echo "[" > M09.json
           first=true
-          for url in $urls; do
-            if [ "$first" = false ]; then echo "," >> M09.json; fi
+          grep -Eo 'https://github\.com/[^ ]+' "GSAC賞金任務/823-任務清單.md" | while read url; do
             repo=$(echo "$url" | cut -d'/' -f4,5)
             issue=$(echo "$url" | awk -F'/' '{print $NF}')
+            if [ "$first" = false ]; then echo "," >> M09.json; fi
+            echo "🔍 抓取中：$repo#$issue"
             gh issue view "$repo#$issue" \
               --json number,title,body,comments,labels,assignees,createdAt,updatedAt,htmlUrl \
               >> M09.json
@@ -46,6 +45,3 @@ jobs:
         with:
           name: 823-M09情報檔案
           path: M09.json
-
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
